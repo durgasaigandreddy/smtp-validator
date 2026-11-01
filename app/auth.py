@@ -16,8 +16,8 @@ def generate_raw_key():
 
 def create_key(name, admin=False):
     raw = generate_raw_key()
-    q("INSERT INTO api_keys(name, key_hash, is_admin) VALUES (%s, %s, %s)",
-      (name, hash_key(raw), admin))
+    q("INSERT INTO api_keys(name, key_hash, key_hint, is_admin) VALUES (%s, %s, %s, %s)",
+      (name, hash_key(raw), raw[-4:], admin))
     return raw
 
 
@@ -31,7 +31,7 @@ def require_key(request: Request, x_api_key: str | None = Header(default=None)):
     if not x_api_key:
         audit(None, "auth_failed", "missing key", request)
         raise HTTPException(401, "Missing X-API-Key header")
-    row = q("SELECT id, name, is_admin FROM api_keys WHERE key_hash = %s AND active",
+    row = q("SELECT id, name, is_admin, key_hint FROM api_keys WHERE key_hash = %s AND active",
             (hash_key(x_api_key),), one=True)
     if not row:
         audit(None, "auth_failed", "invalid key", request)

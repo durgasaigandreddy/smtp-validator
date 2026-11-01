@@ -1,0 +1,722 @@
+{
+  "info": {
+    "name": "Email Validation API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Run folder 0 first. Set baseUrl and setupToken in the collection variables.\nDevelopment: http://127.0.0.1:8000 (no HTTPS).\nProduction: https://<SITE_ADDRESS>. With TLS_MODE=internal, Caddy uses its own certificate authority: either install deploy/caddy-root.crt (./scripts/export_caddy_root.sh) or turn off 'SSL certificate verification' in Postman settings for testing.\n/admin/* and /bootstrap only work from the LAN or VPN. See docs/AUTH_AND_KEYS.md and docs/WEBHOOKS.md."
+  },
+  "item": [
+    {
+      "name": "0. Setup (run once)",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/healthz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            },
+            "description": "Returns {ok:true} when the API and database are up."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"API is up\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bootstrap: create FIRST admin key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Setup-Token",
+                "value": "{{setupToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bootstrap",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bootstrap"
+              ]
+            },
+            "description": "Works once, only while no admin key exists. Needs BOOTSTRAP_TOKEN from the server .env as X-Setup-Token. The returned key is saved to the adminKey variable automatically. Afterwards remove BOOTSTRAP_TOKEN from .env.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"First admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"created\", () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "if (j.api_key) { pm.collectionVariables.set(\"adminKey\", j.api_key); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. API keys (admin)",
+      "item": [
+        {
+          "name": "Create client key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "keys"
+              ]
+            },
+            "description": "Returns the key once. Saved to clientKey.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Client app\",\n  \"admin\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.api_key) { pm.collectionVariables.set(\"clientKey\", j.api_key); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create another admin key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "keys"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Second admin\",\n  \"admin\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List keys",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "keys"
+              ]
+            },
+            "description": "Shows id, name, admin, active. Never shows the key itself."
+          }
+        },
+        {
+          "name": "Revoke key (change the id)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/keys/2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "keys",
+                "2"
+              ]
+            },
+            "description": "You cannot revoke the key you are using."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1b. Sign-in check",
+      "item": [
+        {
+          "name": "Who am I (client key)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "me"
+              ]
+            },
+            "description": "Returns {id, name, is_admin, key_hint}. is_admin false = show the user screen. 401 = unknown key."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"client key\", () => { pm.response.to.have.status(200); pm.expect(pm.response.json().is_admin).to.eql(false); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Who am I (admin key)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "me"
+              ]
+            },
+            "description": "is_admin true = show the admin screen."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"admin key\", () => { pm.response.to.have.status(200); pm.expect(pm.response.json().is_admin).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Jobs (client key)",
+      "item": [
+        {
+          "name": "List my jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/jobs?limit=20&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "jobs"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Your jobs, newest first: job_id, name, total, done, pending, finished, created_at. Feeds the Recent jobs list."
+          }
+        },
+        {
+          "name": "List ALL jobs (admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/jobs?all=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "jobs"
+              ],
+              "query": [
+                {
+                  "key": "all",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Admin only. A client key with all=1 gets 403."
+          }
+        },
+        {
+          "name": "Create job (JSON)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/jobs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "jobs"
+              ]
+            },
+            "description": "Returns 202 with job_id. Saved to jobId.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emails\": [\n    \"a@example.com\",\n    \"b@example.org\",\n    \"bad-address\"\n  ],\n  \"name\": \"postman test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"accepted\", () => pm.response.to.have.status(202));",
+                  "const j = pm.response.json();",
+                  "if (j.job_id) { pm.collectionVariables.set(\"jobId\", j.job_id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create job with webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/jobs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "jobs"
+              ]
+            },
+            "description": "Needs WEBHOOK_SECRET on the server. http/https only; link-local addresses are refused, and loopback (127.0.0.1) only when WEBHOOK_ALLOW_LOOPBACK=1 (development). Test receiver: examples/webhook_receiver.py. GET the job afterwards to see webhook.delivered_at.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"emails\": [\n    \"a@example.com\",\n    \"b@example.org\"\n  ],\n  \"name\": \"with webhook\",\n  \"webhook_url\": \"http://192.168.1.20:9000/hook\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.job_id) { pm.collectionVariables.set(\"jobId\", j.job_id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload CSV",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/jobs/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "jobs",
+                "upload"
+              ]
+            },
+            "description": "Choose a CSV file with an email column (or one address per line).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "webhook_url",
+                  "type": "text",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.job_id) { pm.collectionVariables.set(\"jobId\", j.job_id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Job status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/jobs/{{jobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "jobs",
+                "{{jobId}}"
+              ]
+            },
+            "description": "Progress, verdict counts, counts by provider, and webhook delivery state."
+          }
+        },
+        {
+          "name": "Download results CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/jobs/{{jobId}}/results.csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "jobs",
+                "{{jobId}}",
+                "results.csv"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Stored result for one email",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/result?email=a@example.com",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "result"
+              ],
+              "query": [
+                {
+                  "key": "email",
+                  "value": "a@example.com"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Admin / monitoring",
+      "item": [
+        {
+          "name": "Status (queue, IPs, verdicts today)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "status"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Pause an IP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/ips/203.0.113.10/pause",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "ips",
+                "203.0.113.10",
+                "pause"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Resume an IP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/ips/203.0.113.10/resume",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "ips",
+                "203.0.113.10",
+                "resume"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Audit log (last 100)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit?limit=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "audit"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "setupToken",
+      "value": ""
+    },
+    {
+      "key": "adminKey",
+      "value": ""
+    },
+    {
+      "key": "clientKey",
+      "value": ""
+    },
+    {
+      "key": "jobId",
+      "value": ""
+    }
+  ]
+}
