@@ -4,7 +4,7 @@ import io
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
@@ -81,6 +81,34 @@ def safe(v):
 def healthz():
     q("SELECT 1")
     return {"ok": True}
+
+
+@app.get("/v1/me")
+def whoami(request: Request, key=Depends(require_key)):
+    """Who does this key belong to? Used by the sign-in page to choose the user or admin screen."""
+    audit(key["id"], "sign_in", "", request)
+    return {"id": key["id"], "name": key["name"], "is_admin": key["is_admin"], "key_hint": key["key_hint"]}
+
+
+@app.get("/v1/jobs")
+def list_jobs(all_jobs: bool = Query(False, alias="all"), limit: int = 20, offset: int = 0,
+              key=Depends(require_key)):
+    """The caller's jobs, newest first. Admins may pass ?all=1 to see every client's jobs."""
+    if all_jobs and not key["is_admin"]:
+        raise HTTPException(403, "Admin key required for all=1")
+    limit, offset = max(1, min(limit, 100)), max(0, offset)
+    where, params = ("", ()) if all_jobs else ("WHERE j.key_id = %s", (key["id"],))
+    rows = q(f"""SELECT j.id AS job_id, j.name, j.total, j.created_at, k.name AS key_name,
+                        coalesce(c.done, 0) AS done, coalesce(c.pending, 0) AS pending,
+                        coalesce(c.pending, 0) = 0 AS finished
+                 FROM jobs j
+                 LEFT JOIN api_keys k ON k.id = j.key_id
+                 LEFT JOIN LATERAL (
+                     SELECT count(*) FILTER (WHERE status = 'done') AS done,
+                            count(*) FILTER (WHERE status IN ('queued', 'running')) AS pending
+                     FROM job_items WHERE job_id = j.id) c ON true
+                 {where} ORDER BY j.id DESC LIMIT %s OFFSET %s""", params + (limit, offset))
+    return {"jobs": rows, "limit": limit, "offset": offset}
 
 
 @app.post("/v1/jobs", status_code=202)
@@ -175,8 +203,8 @@ def bootstrap(body: BootstrapIn, request: Request, x_setup_token: str | None = H
         conn.execute("SELECT pg_advisory_xact_lock(728)")  # two simultaneous calls cannot both win
         if conn.execute("SELECT 1 FROM api_keys WHERE is_admin AND active LIMIT 1").fetchone():
             raise HTTPException(409, "An admin key already exists. Use POST /admin/keys")
-        conn.execute("INSERT INTO api_keys(name, key_hash, is_admin) VALUES (%s, %s, true)",
-                     (body.name, hash_key(raw)))
+        conn.execute("INSERT INTO api_keys(name, key_hash, key_hint, is_admin) VALUES (%s, %s, %s, true)",
+                     (body.name, hash_key(raw), raw[-4:]))
     audit(None, "bootstrap", f"first admin key created: {body.name}", request)
     return {"api_key": raw, "note": "Shown once. Store it safely, then remove BOOTSTRAP_TOKEN from .env."}
 
@@ -230,12 +258,12 @@ class KeyIn(BaseModel):
 def new_key(body: KeyIn, request: Request, key=Depends(require_admin)):
     raw = create_key(body.name, body.admin)
     audit(key["id"], "key_create", f"name={body.name} admin={body.admin}", request)
-    return {"api_key": raw, "note": "Shown once. Store it safely."}
+    return {"api_key": raw, "key_hint": raw[-4:], "note": "Shown once. Store it safely."}
 
 
 @app.get("/admin/keys")
 def list_keys(key=Depends(require_admin)):
-    return q("SELECT id, name, is_admin, active, created_at FROM api_keys ORDER BY id")
+    return q("SELECT id, name, is_admin, active, key_hint, created_at FROM api_keys ORDER BY id")
 
 
 @app.delete("/admin/keys/{key_id}")
@@ -251,7 +279,10 @@ def revoke_key(key_id: int, request: Request, key=Depends(require_admin)):
 
 @app.get("/admin/audit")
 def audit_log(limit: int = 100, key=Depends(require_admin)):
-    return q("SELECT * FROM audit_log ORDER BY id DESC LIMIT %s", (min(limit, 1000),))
+    # key_name / key_hint come from api_keys; they are null for failed sign-ins (no valid key)
+    return q("""SELECT a.id, a.at, a.key_id, k.name AS key_name, k.key_hint, a.action, a.detail, a.client_ip
+                FROM audit_log a LEFT JOIN api_keys k ON k.id = a.key_id
+                ORDER BY a.id DESC LIMIT %s""", (max(1, min(limit, 1000)),))
 
 
 DASHBOARD = """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">

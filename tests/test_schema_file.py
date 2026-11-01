@@ -12,3 +12,7 @@ def test_all_tables_present_and_idempotent():
     assert SCHEMA.count("CREATE INDEX") == SCHEMA.count("CREATE INDEX IF NOT EXISTS")
     assert "ADD COLUMN IF NOT EXISTS webhook_url" in SCHEMA
     assert "GRANT" not in SCHEMA  # grants live in sql/grants.sql (role may differ per install)
+
+
+def test_key_hint_column():
+    assert "ADD COLUMN IF NOT EXISTS key_hint" in SCHEMA

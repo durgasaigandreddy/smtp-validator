@@ -44,7 +44,7 @@ HTTPS with Caddy, daily backups, CSV results.
 ## Quick start: production (Linux server, Docker)
 
 ```bash
-cp .env .env                 # set passwords, HELO_HOST, MAIL_FROM, SITE_ADDRESS, TLS_MODE, BOOTSTRAP_TOKEN
+cp .env.example .env                 # set passwords, HELO_HOST, MAIL_FROM, SITE_ADDRESS, TLS_MODE, BOOTSTRAP_TOKEN
 nano config/ips.txt                  # one public IP per line
 sudo MGMT_CIDR=192.168.1.0/24 API_ALLOW_CIDR=192.168.1.0/24 ./scripts/setup_server.sh   # once
 ./scripts/deploy.sh
@@ -89,6 +89,8 @@ Caddy removes `X-Api-Key` and `X-Setup-Token` from its access log and refuses `/
 |---|---|---|
 | `GET /healthz` | none | liveness and database check |
 | `POST /bootstrap` | `X-Setup-Token` | create the first admin key (once) |
+| `GET /v1/me` | key | who the key belongs to: `{id, name, is_admin, key_hint}`; the sign-in page uses `is_admin` to pick the screen |
+| `GET /v1/jobs` | key | your jobs, newest first (`?limit=20&offset=0`); admins may add `?all=1` for everyone's |
 | `POST /v1/jobs` | key | submit `{"emails":[...],"name":"...","webhook_url":"..."}` |
 | `POST /v1/jobs/upload` | key | submit a CSV file (`email` column); optional form field `webhook_url` |
 | `GET /v1/jobs/{id}` | key | progress, verdict counts, counts by provider, webhook state |
@@ -98,7 +100,7 @@ Caddy removes `X-Api-Key` and `X-Setup-Token` from its access log and refuses `/
 | `GET /admin/dashboard` | admin key typed into the page | live status page |
 | `POST /admin/ips/{ip}/pause` and `/resume` | admin | stop or resume an IP |
 | `POST /admin/keys`, `GET /admin/keys`, `DELETE /admin/keys/{id}` | admin | create, list, revoke keys |
-| `GET /admin/audit` | admin | audit log |
+| `GET /admin/audit` | admin | audit log with the key's name and last 4 characters (`key_name`, `key_hint`) |
 
 Send the key as `X-API-Key: ev_...`. Interactive docs at `/docs`. Import `postman/EmailValidation.postman_collection.json`.
 

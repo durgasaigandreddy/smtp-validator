@@ -223,8 +223,143 @@
       ]
     },
     {
+      "name": "1b. Sign-in check",
+      "item": [
+        {
+          "name": "Who am I (client key)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "me"
+              ]
+            },
+            "description": "Returns {id, name, is_admin, key_hint}. is_admin false = show the user screen. 401 = unknown key."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"client key\", () => { pm.response.to.have.status(200); pm.expect(pm.response.json().is_admin).to.eql(false); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Who am I (admin key)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "me"
+              ]
+            },
+            "description": "is_admin true = show the admin screen."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"admin key\", () => { pm.response.to.have.status(200); pm.expect(pm.response.json().is_admin).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "2. Jobs (client key)",
       "item": [
+        {
+          "name": "List my jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/jobs?limit=20&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "jobs"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Your jobs, newest first: job_id, name, total, done, pending, finished, created_at. Feeds the Recent jobs list."
+          }
+        },
+        {
+          "name": "List ALL jobs (admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/jobs?all=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "jobs"
+              ],
+              "query": [
+                {
+                  "key": "all",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Admin only. A client key with all=1 gets 403."
+          }
+        },
         {
           "name": "Create job (JSON)",
           "request": {

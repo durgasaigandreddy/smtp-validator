@@ -3,8 +3,9 @@
 -- A) Create an admin API key without the CLI.
 -- Use a long random value of your own in place of the text below, then send it
 -- as the X-API-Key header. Only its SHA-256 hash is stored.
-INSERT INTO api_keys(name, key_hash, is_admin)
-VALUES ('Admin', encode(sha256('ev_REPLACE_WITH_A_LONG_RANDOM_STRING'::bytea), 'hex'), true);
+INSERT INTO api_keys(name, key_hint, key_hash, is_admin)
+VALUES ('Admin', right('ev_REPLACE_WITH_A_LONG_RANDOM_STRING', 4),
+        encode(sha256('ev_REPLACE_WITH_A_LONG_RANDOM_STRING'::bytea), 'hex'), true);
 
 -- B) Check that all tables exist (expect 10 rows)
 SELECT table_name FROM information_schema.tables

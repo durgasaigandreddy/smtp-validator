@@ -16,6 +16,9 @@ Three different secrets exist. They are easy to confuse, so here they are side b
 - A key is either a **client key** (can create and read its own jobs) or an **admin key** (`is_admin = true`; can also use `/admin/*`). An admin route called with a client key gives **403**.
 - Every call is written to `audit_log` (key id, action, caller address). Failed logins are logged too.
 
+- The last 4 characters of a key are kept as `key_hint`, so screens can say "key ending a91f". That reveals nothing useful (4 of 43 random characters). Keys created before this was added have no hint.
+- `GET /v1/me` returns `{id, name, is_admin, key_hint}` for the key you send. A sign-in page calls it to check the key and to decide between the user and admin screen; a successful call is audited as `sign_in`.
+
 ## 2. The chicken-and-egg problem and the setup token
 
 Creating keys needs an admin key, but a fresh server has none. The setup token solves this exactly once.

@@ -22,7 +22,7 @@ def main():
         print("API key (shown once, store it safely):")
         print(create_key(a.name, a.admin))
     elif a.cmd == "list-keys":
-        for k in q("SELECT id, name, is_admin, active, created_at FROM api_keys ORDER BY id"):
+        for k in q("SELECT id, name, is_admin, active, key_hint, created_at FROM api_keys ORDER BY id"):
             print(k)
     elif a.cmd == "revoke-key":
         q("UPDATE api_keys SET active = false WHERE id = %s", (a.id,))

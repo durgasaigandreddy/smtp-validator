@@ -53,6 +53,9 @@ CREATE INDEX IF NOT EXISTS probe_log_ip_at ON probe_log(ip, at);
 
 CREATE TABLE IF NOT EXISTS alerts_sent(key TEXT PRIMARY KEY, at TIMESTAMPTZ NOT NULL);
 
+-- Last 4 characters of a key, so screens can show "key ending a91f". The key itself is never stored.
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS key_hint TEXT;
+
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS webhook_url TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS webhook_sent_at TIMESTAMPTZ;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS webhook_attempts INT NOT NULL DEFAULT 0;
