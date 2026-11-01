@@ -156,9 +156,13 @@ def main():
     while True:
         try:
             requeue_stuck()
+            log.info("checking heartBeat1{}")
             resume_expired()
+            log.info("checking heartBeat2{}")
             check_block_rates()
+            log.info("checking heartBeat3{}")
             check_workers_and_queue()
+            log.info("checking heartBeat4{}")
             if date.today() != last_purge and datetime.now().hour >= 3:
                 purge()
                 last_purge = date.today()
