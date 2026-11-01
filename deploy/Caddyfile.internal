@@ -1,0 +1,47 @@
+# HTTPS front door for the Email Validation API. TLS_MODE=internal (default). Caddy acts as its own private certificate authority and issues
+# the certificate by itself. Use for a LAN host name or IP (for example emailval.client.local or
+# 192.168.1.50). Client applications must trust Caddy's root certificate: run
+# ./scripts/export_caddy_root.sh and install deploy/caddy-root.crt on those machines.
+# SITE_ADDRESS and API_PORT come from .env. Reload after editing:
+#   docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+{$SITE_ADDRESS} {
+    tls internal
+
+    encode gzip
+    request_body {
+        max_size 50MB
+    }
+
+    # One JSON line per request (client IP, method, URL, status, duration).
+    # Caddy hides Authorization and Cookie by itself, but NOT our custom headers, so the API
+    # key and the one-time setup token are removed from the log explicitly.
+    # View with: docker compose logs -f caddy
+    log {
+        output stdout
+        format filter {
+            wrap json
+            fields {
+                request>headers>X-Api-Key delete
+                request>headers>X-Setup-Token delete
+            }
+        }
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    # Admin endpoints and first-time setup only from the LAN or VPN, never from the internet.
+    @admin_outside {
+        path /admin/* /bootstrap
+        not remote_ip private_ranges
+    }
+    respond @admin_outside "Forbidden" 403
+
+    # The API listens on localhost only. Caddy adds X-Forwarded-For with the real client
+    # address, which uvicorn trusts (--proxy-headers) so the audit log shows who called.
+    reverse_proxy 127.0.0.1:{$API_PORT:8000}
+}

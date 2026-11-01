@@ -1,0 +1,4 @@
+# One public sending IP per line (the /28 or /29 block from the ISP).
+# Each IP gets its own worker. Run: python3 scripts/gen_workers.py
+# 203.0.113.10
+# 203.0.113.11
