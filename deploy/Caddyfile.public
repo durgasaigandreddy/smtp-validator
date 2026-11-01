@@ -1,0 +1,44 @@
+# HTTPS front door for the Email Validation API. TLS_MODE=public. Caddy obtains and renews a free Let's Encrypt certificate by itself.
+# Needs: SITE_ADDRESS is a real domain, its DNS points at this server, and ports 80 and 443
+# are reachable from the internet. /admin and /bootstrap are still refused from outside the LAN.
+# SITE_ADDRESS and API_PORT come from .env. Reload after editing:
+#   docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+{$SITE_ADDRESS} {
+    encode gzip
+    request_body {
+        max_size 50MB
+    }
+
+    # One JSON line per request (client IP, method, URL, status, duration).
+    # Caddy hides Authorization and Cookie by itself, but NOT our custom headers, so the API
+    # key and the one-time setup token are removed from the log explicitly.
+    # View with: docker compose logs -f caddy
+    log {
+        output stdout
+        format filter {
+            wrap json
+            fields {
+                request>headers>X-Api-Key delete
+                request>headers>X-Setup-Token delete
+            }
+        }
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    # Admin endpoints and first-time setup only from the LAN or VPN, never from the internet.
+    @admin_outside {
+        path /admin/* /bootstrap
+        not remote_ip private_ranges
+    }
+    respond @admin_outside "Forbidden" 403
+
+    # The API listens on localhost only. Caddy adds X-Forwarded-For with the real client
+    # address, which uvicorn trusts (--proxy-headers) so the audit log shows who called.
+    reverse_proxy 127.0.0.1:{$API_PORT:8000}
+}

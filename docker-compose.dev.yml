@@ -1,0 +1,17 @@
+# Development on Windows or macOS: only the database, published on localhost:5432.
+# (The production docker-compose.yml uses Linux host networking, which Docker Desktop lacks.)
+#   docker compose -f docker-compose.dev.yml up -d
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-validator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-long-random}
+      POSTGRES_DB: ${POSTGRES_DB:-validator}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+volumes:
+  pgdata_dev:

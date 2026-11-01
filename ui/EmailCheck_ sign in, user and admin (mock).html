@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EmailCheck: sign in, user and admin (mock)</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4F6F8;--card:#fff;--line:#DDE2E8;--ink:#1B2430;--mut:#5B6573;--acc:#0F766E;--onacc:#fff;--top:#1B2430;--topink:#E6EAF0;--bd:#8A94A1;--danger:#B42318;
+--okb:#DCFCE7;--okf:#14532D;--badb:#FEE4E2;--badf:#7A271A;--warnb:#FEF3C7;--warnf:#78350F;--grayb:#E8ECF0;--grayf:#2F3945;--track:#E8ECF0;--okbox:#F0FDF4;--okline:#86EFAC;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0F141A;--card:#171E26;--line:#2A3340;--ink:#E6EAF0;--mut:#A3AEBB;--acc:#2DD4BF;--onacc:#04201C;--top:#0A0E12;--bd:#6B7684;--danger:#F87171;--okb:#123D24;--okf:#A7F3C0;--badb:#4A1A17;--badf:#FECACA;--warnb:#4A3410;--warnf:#FDE68A;--grayb:#2A3340;--grayf:#D5DCE5;--track:#2A3340;--okbox:#10261A;--okline:#1E6B3A;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0F141A;--card:#171E26;--line:#2A3340;--ink:#E6EAF0;--mut:#A3AEBB;--acc:#2DD4BF;--onacc:#04201C;--top:#0A0E12;--bd:#6B7684;--danger:#F87171;--okb:#123D24;--okf:#A7F3C0;--badb:#4A1A17;--badf:#FECACA;--warnb:#4A3410;--warnf:#FDE68A;--grayb:#2A3340;--grayf:#D5DCE5;--track:#2A3340;--okbox:#10261A;--okline:#1E6B3A;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 "IBM Plex Sans",system-ui,sans-serif}
+h1{margin:0;font-size:18px;font-weight:600;outline:none}h2{margin:0 0 12px;font-size:17px}
+.top{background:var(--top);color:var(--topink);padding:12px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.top span{font-size:13px}.who{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.wrap{max-width:1180px;margin:0 auto;padding:24px;display:grid;gap:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px}
+.mut{color:var(--mut);font-size:13px}
+.btn{background:var(--acc);color:var(--onacc);border:1px solid var(--acc);border-radius:8px;padding:10px 18px;font:600 15px inherit;font-family:inherit;min-height:44px;cursor:pointer}
+.btn.alt{background:transparent;color:var(--acc)}.btn.red{background:transparent;color:var(--danger);border-color:var(--danger)}
+.btn.ghost{background:transparent;color:var(--topink);border-color:var(--topink)}
+.btn:focus-visible,input:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+input[type=text],input[type=password]{width:100%;padding:10px 12px;border:1px solid var(--bd);border-radius:8px;font:inherit;background:var(--card);color:var(--ink);min-height:44px}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:var(--okb);color:var(--okf)}.bad{background:var(--badb);color:var(--badf)}.warn{background:var(--warnb);color:var(--warnf)}.gray{background:var(--grayb);color:var(--grayf)}
+table{width:100%;border-collapse:collapse;font-size:14px}th{text-align:left;color:var(--mut);font-weight:500;padding:8px;border-bottom:1px solid var(--line)}td{padding:10px 8px;border-bottom:1px solid var(--line)}
+.scroll{overflow-x:auto}.bar{height:10px;border-radius:99px;background:var(--track);overflow:hidden;display:flex}.bar span{display:block;height:100%}
+.grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr))}.kpi{font-size:28px;font-weight:600;margin-top:4px}
+.login{min-height:80vh;display:grid;place-items:center;padding:24px}.login .card{width:100%;max-width:440px;padding:28px}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}.tabs .btn{width:100%}.tabs .btn[aria-pressed="false"]{background:transparent;color:var(--acc)}
+label.l{display:block;font-weight:500;margin:0 0 6px}.err{color:var(--danger);font-weight:500;min-height:22px;margin:10px 0 0}
+.note{background:var(--warnb);color:var(--warnf);border-radius:8px;padding:10px 12px;font-size:13px;margin-top:16px}
+</style>
+</head>
+<body>
+
+<!-- ============ SIGN IN ============ -->
+<section id="login" class="login">
+<div class="card">
+<h1 tabindex="-1">EmailCheck</h1>
+<p class="mut" style="margin:6px 0 0">Check that email addresses exist before you send.</p>
+<div class="tabs" role="group" aria-label="Sign in as">
+<button class="btn" data-act="mode" data-mode="user" aria-pressed="true">User sign-in</button>
+<button class="btn" data-act="mode" data-mode="admin" aria-pressed="false">Admin sign-in</button>
+</div>
+<form id="f" novalidate>
+<label class="l" for="key" id="keylbl">Your API key</label>
+<input id="key" type="password" autocomplete="off" placeholder="ev_…">
+<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input id="show" type="checkbox" style="width:auto;min-height:auto"> Show key</label>
+<div class="err" id="err" role="alert"></div>
+<button class="btn" style="width:100%;margin-top:8px" type="submit" id="go">Sign in</button>
+</form>
+<p class="mut" id="help" style="margin:14px 0 0">Your administrator gave you this key. It’s shown only once when it’s created.</p>
+<div class="note"><strong>Demo only.</strong> User key: <code>ev_user_demo</code> · Admin key: <code>ev_admin_demo</code></div>
+</div>
+</section>
+
+<!-- ============ USER ============ -->
+<div id="user" hidden>
+<header class="top"><h1 tabindex="-1">EmailCheck</h1><div class="who"><span>Signed in as Client app · key ending a91f</span><button class="btn ghost" data-act="out">Sign out</button></div></header>
+<main class="wrap">
+<div class="grid">
+<section class="card">
+<h2>Check a list of addresses</h2>
+<div style="border:2px dashed var(--bd);border-radius:12px;padding:26px 16px;text-align:center;background:var(--bg)">
+<div style="font-weight:600">Drop your CSV file here</div>
+<div class="mut" style="margin:4px 0 12px">One column named “email”. Up to 100,000 addresses.</div>
+<button class="btn alt">Choose file</button>
+</div>
+<label class="l" for="wh" style="margin-top:14px">Notify me when finished <span class="mut">(optional webhook URL)</span></label>
+<input id="wh" type="text" placeholder="https://your-app.example/hook">
+<p class="mut" style="margin:10px 0 14px">Addresses checked in the last 30 days are answered instantly. No email is ever sent to them.</p>
+<button class="btn">Start check</button>
+</section>
+<section class="card">
+<h2>Look up one address</h2>
+<label class="l" for="one">Email address</label>
+<div style="display:flex;gap:10px;flex-wrap:wrap"><input id="one" type="text" value="priya.sharma@example.org" style="flex:1;min-width:200px"><button class="btn">Look up</button></div>
+<div style="margin-top:16px;padding:14px;border-radius:10px;background:var(--okbox);border:1px solid var(--okline)">
+<span class="pill ok">Valid</span> <strong>priya.sharma@example.org</strong>
+<div class="mut" style="margin-top:6px">Google mail · checked 2 days ago · the mail server accepted this address</div>
+</div>
+<p class="mut" style="margin-bottom:0">Not found yet? Add it to a list and it will be checked.</p>
+</section>
+</div>
+<section class="card">
+<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center"><h2 style="margin:0">Job #7 · march-list.csv</h2><span class="pill warn">Running</span></div>
+<div class="mut" style="margin:10px 0 6px">680 of 1,000 addresses checked (68%). Large lists can take longer when daily sending limits apply.</div>
+<div class="bar"><span style="width:68%;background:var(--acc)"></span></div>
+<div style="font-weight:600;margin:18px 0 8px">Results so far</div>
+<div class="bar" style="height:14px"><span style="width:60.6%;background:#15803D"></span><span style="width:20.3%;background:#B42318"></span><span style="width:9%;background:#D97706"></span><span style="width:10.1%;background:#94A3B8"></span></div>
+<div class="grid" style="gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin:14px 0">
+<div><span class="pill ok">Valid</span> <strong>412</strong><div class="mut">The mailbox exists</div></div>
+<div><span class="pill bad">Invalid</span> <strong>138</strong><div class="mut">Rejected, or no mail server</div></div>
+<div><span class="pill warn">Catch-all</span> <strong>61</strong><div class="mut">Domain accepts everything</div></div>
+<div><span class="pill gray">Unknown</span> <strong>69</strong><div class="mut">No clear answer from the server</div></div>
+</div>
+<div class="scroll"><table>
+<tr><th>Provider</th><th>Valid</th><th>Invalid</th><th>Catch-all</th><th>Unknown</th></tr>
+<tr><td>Google</td><td>201</td><td>52</td><td>8</td><td>11</td></tr>
+<tr><td>Microsoft</td><td>118</td><td>40</td><td>19</td><td>22</td></tr>
+<tr><td>Yahoo</td><td>37</td><td>21</td><td>6</td><td>9</td></tr>
+<tr><td>Other</td><td>56</td><td>25</td><td>28</td><td>27</td></tr>
+</table></div>
+<div style="margin-top:16px"><button class="btn">Download results (CSV)</button></div>
+</section>
+<section class="card">
+<h2>Recent jobs</h2>
+<div class="scroll"><table>
+<tr><th>Job</th><th>Name</th><th>Addresses</th><th>Status</th><th>Started</th><th></th></tr>
+<tr><td>#7</td><td>march-list.csv</td><td>1,000</td><td><span class="pill warn">Running</span></td><td>Today, 10:42</td><td><button class="btn alt">Open</button></td></tr>
+<tr><td>#6</td><td>newsletter.csv</td><td>12,480</td><td><span class="pill ok">Finished</span></td><td>Yesterday</td><td><button class="btn alt">Download</button></td></tr>
+<tr><td>#5</td><td>webinar-leads</td><td>2,310</td><td><span class="pill ok">Finished</span></td><td>28 Oct</td><td><button class="btn alt">Download</button></td></tr>
+</table></div>
+</section>
+</main>
+</div>
+
+<!-- ============ ADMIN ============ -->
+<div id="admin" hidden>
+<header class="top"><h1 tabindex="-1">EmailCheck · Admin</h1><div class="who"><span>Signed in as Admin · production</span><button class="btn ghost" data-act="out">Sign out</button></div></header>
+<main class="wrap">
+<div role="alert" class="note" style="margin:0;font-size:15px;padding:12px 16px"><strong>2 IPs need attention.</strong> 203.0.113.14 is blacklisted (zen.spamhaus.org) and resumes by itself once clean. 203.0.113.15 has had no heartbeat for 12 minutes.</div>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+<div class="card"><div class="mut">Waiting in queue</div><div class="kpi">12,480</div></div>
+<div class="card"><div class="mut">Running now</div><div class="kpi">3</div></div>
+<div class="card"><div class="mut">Checked today</div><div class="kpi">8,914</div></div>
+<div class="card"><div class="mut">Active sending IPs</div><div class="kpi">4 of 6</div></div>
+</div>
+<section class="card">
+<h2>Sending IPs</h2>
+<div class="scroll"><table>
+<tr><th>IP</th><th>Status</th><th>Today / daily limit</th><th>Blocked (60 min)</th><th>Blacklists</th><th>Worker</th><th></th></tr>
+<tr><td>203.0.113.10</td><td><span class="pill ok">Active</span></td><td>612 / 1,500</td><td>4%</td><td>Clean</td><td>Alive</td><td><button class="btn red" data-act="toggle" data-state="active">Pause</button></td></tr>
+<tr><td>203.0.113.11</td><td><span class="pill ok">Active</span></td><td>1,500 / 1,500 · at limit</td><td>7%</td><td>Clean</td><td>Alive</td><td><button class="btn red" data-act="toggle" data-state="active">Pause</button></td></tr>
+<tr><td>203.0.113.12</td><td><span class="pill warn">Paused · high block rate</span></td><td>310 / 1,500</td><td>41%</td><td>Clean</td><td>Alive</td><td><button class="btn alt" data-act="toggle" data-state="paused">Resume</button></td></tr>
+<tr><td>203.0.113.13</td><td><span class="pill ok">Active</span></td><td>88 / 273 · warming up (day 30)</td><td>2%</td><td>Clean</td><td>Alive</td><td><button class="btn red" data-act="toggle" data-state="active">Pause</button></td></tr>
+<tr><td>203.0.113.14</td><td><span class="pill bad">Paused · blacklisted</span></td><td>0 / 1,500</td><td>n/a</td><td>zen.spamhaus.org</td><td>Alive</td><td><button class="btn alt" data-act="toggle" data-state="paused">Resume</button></td></tr>
+<tr><td>203.0.113.15</td><td><span class="pill bad">Worker down</span></td><td>402 / 1,500</td><td>5%</td><td>Clean</td><td>Last seen 12 min ago</td><td><button class="btn red" data-act="toggle" data-state="active">Pause</button></td></tr>
+</table></div>
+</section>
+<div class="grid">
+<section class="card">
+<h2>API keys</h2>
+<div class="scroll"><table id="keys">
+<tr><th>Name</th><th>Type</th><th>Status</th><th>Created</th><th></th></tr>
+<tr><td>Admin</td><td>Admin</td><td><span class="pill ok">Active</span></td><td>1 Nov</td><td class="mut">In use</td></tr>
+<tr><td>Client app</td><td>Client</td><td><span class="pill ok">Active</span></td><td>1 Nov</td><td><button class="btn red" data-act="revoke">Revoke</button></td></tr>
+<tr><td>Old CRM</td><td>Client</td><td><span class="pill gray">Revoked</span></td><td>12 Sep</td><td></td></tr>
+</table></div>
+<div style="border-top:1px solid var(--line);margin-top:16px;padding-top:16px">
+<label class="l" for="kn">Create a new key</label>
+<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><input id="kn" type="text" placeholder="Name, for example Billing app" style="flex:1;min-width:200px"><label style="display:flex;gap:6px;align-items:center"><input id="ka" type="checkbox" style="width:auto;min-height:auto"> Admin access</label><button class="btn" data-act="create">Create key</button></div>
+<div class="err" id="kerr" role="alert"></div>
+<div id="knew" hidden class="note" style="margin-top:8px"><strong>Copy this key now. It won’t be shown again.</strong><br><code id="kval" style="word-break:break-all"></code></div>
+<p class="mut" style="margin-bottom:0">Demo key only, it doesn’t work anywhere.</p>
+</div>
+</section>
+<section class="card">
+<h2>Recent activity</h2>
+<div class="scroll"><table>
+<tr><th>Time</th><th>Key</th><th>Action</th><th>From</th></tr>
+<tr><td>10:42</td><td>Client app</td><td>Created job #7</td><td>192.168.1.20</td></tr>
+<tr><td>10:15</td><td>Admin</td><td>Paused IP 203.0.113.12</td><td>10.8.0.2</td></tr>
+<tr><td>09:58</td><td>Client app</td><td>Downloaded job #6</td><td>192.168.1.20</td></tr>
+<tr><td>09:31</td><td>unknown</td><td>Sign-in failed (wrong key)</td><td>192.168.1.77</td></tr>
+<tr><td>09:02</td><td>Admin</td><td>Created key “Client app”</td><td>10.8.0.2</td></tr>
+</table></div>
+</section>
+</div>
+</main>
+</div>
+
+<script>
+(function () {
+  var KEYS = { user: 'ev_user_demo', admin: 'ev_admin_demo' };
+  var mode = 'user';
+  var $ = function (id) { return document.getElementById(id); };
+
+  function show(id) {
+    ['login', 'user', 'admin'].forEach(function (s) { $(s).hidden = (s !== id); });
+    window.scrollTo(0, 0);
+    var h = document.querySelector('#' + id + ' h1');
+    if (h) h.focus();
+  }
+
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('[data-act="mode"]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.mode === m));
+    });
+    $('keylbl').textContent = m === 'admin' ? 'Admin API key' : 'Your API key';
+    $('go').textContent = m === 'admin' ? 'Sign in as admin' : 'Sign in';
+    $('help').textContent = m === 'admin'
+      ? 'Admin access is for the people who run the system. Admin keys are created during setup.'
+      : 'Your administrator gave you this key. It’s shown only once when it’s created.';
+    $('err').textContent = '';
+  }
+
+  $('show').addEventListener('change', function () { $('key').type = this.checked ? 'text' : 'password'; });
+
+  $('f').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = $('key').value.trim(), err = $('err');
+    if (!v) { err.textContent = 'Enter your API key.'; return; }
+    if (v === KEYS[mode]) { err.textContent = ''; $('key').value = ''; show(mode); return; }
+    if (v === KEYS.admin) err.textContent = 'That is an admin key. Choose “Admin sign-in” above.';
+    else if (v === KEYS.user) err.textContent = 'That key is not an admin key. Choose “User sign-in” above.';
+    else err.textContent = 'That key wasn’t recognised. Check it and try again.';
+  });
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var act = b.dataset.act;
+    if (act === 'mode') setMode(b.dataset.mode);
+    else if (act === 'out') { setMode('user'); $('knew').hidden = true; show('login'); }
+    else if (act === 'toggle') {
+      var p = b.closest('tr').querySelector('.pill');
+      if (b.dataset.state === 'paused') {
+        p.className = 'pill ok'; p.textContent = 'Active';
+        b.className = 'btn red'; b.textContent = 'Pause'; b.dataset.state = 'active';
+      } else {
+        p.className = 'pill warn'; p.textContent = 'Paused · manually';
+        b.className = 'btn alt'; b.textContent = 'Resume'; b.dataset.state = 'paused';
+      }
+    }
+    else if (act === 'revoke') {
+      var q = b.closest('tr').querySelector('.pill');
+      q.className = 'pill gray'; q.textContent = 'Revoked'; b.remove();
+    }
+    else if (act === 'create') {
+      var name = $('kn').value.trim(), kerr = $('kerr');
+      if (!name) { kerr.textContent = 'Give the key a name first.'; return; }
+      kerr.textContent = '';
+      var raw = 'ev_demo_' + Array.from(crypto.getRandomValues(new Uint8Array(16)),
+        function (x) { return x.toString(16).padStart(2, '0'); }).join('');
+      $('kval').textContent = raw; $('knew').hidden = false;
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td></td><td></td><td><span class="pill ok">Active</span></td><td>Today</td><td><button class="btn red" data-act="revoke">Revoke</button></td>';
+      tr.cells[0].textContent = name;
+      tr.cells[1].textContent = $('ka').checked ? 'Admin' : 'Client';
+      document.querySelector('#keys tbody').appendChild(tr);
+      $('kn').value = ''; $('ka').checked = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>
