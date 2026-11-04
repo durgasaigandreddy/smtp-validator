@@ -7,8 +7,17 @@ from . import config
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 EMAIL_SQL_RE = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
 
-BLOCK_WORDS = ("spamhaus", "blocked", "blacklist", "block list", "denied", "banned",
-               "reputation", "rbl", "not allowed", "poor reputation")
+BLOCK_WORDS = ("spamhaus", "blocked", "blacklist", "block list", "denied", "banned", "reputation",
+               "rbl", "not allowed", "reverse dns", "rdns", "no smtp service", "not authorized", "not authorised")
+PTR_RE = re.compile(r"\bptr\b")
+# Phrases that mean "this mailbox does not exist", even when the code is a 5.7.x policy code
+INVALID_PHRASES = ("user unknown", "unknown user", "no such user", "no such recipient", "does not exist",
+                   "doesn't exist", "doesn\u2019t exist", "invalid recipient", "recipient not found", "marked as invalid",
+                   "mailbox not found", "mailbox unavailable", "unknown recipient", "recipient unknown",
+                   "user not found", "no mailbox")
+# Added by rcpt_probe when the refusal happened before the RCPT step (so it says nothing about the mailbox)
+STAGE_MARKS = ("sender rejected:", "connection rejected:")
+ENHANCED_RE = re.compile(r"^\s*([245]\.\d{1,3}\.\d{1,3})\s*")
 
 PROVIDERS = (
     ("protection.outlook", "microsoft"), ("outlook", "microsoft"), ("hotmail", "microsoft"),
@@ -93,17 +102,37 @@ def rcpt_probe(address, mx_host, source_ip, port=25):
             pass
 
 
+def parse_reply(code, msg):
+    """Split a server reply into ("250 2.1.5", "OK ...") like the results CSV: the SMTP code plus the
+    enhanced status code, and the remaining text on one line."""
+    first, parts = "", []
+    for line in (msg or "").replace("\r", "").split("\n"):
+        if not line.strip():
+            continue
+        m = ENHANCED_RE.match(line)
+        if m:
+            first = first or m.group(1)
+            line = line[m.end():]
+        parts.append(line.strip())
+    text = " ".join(" ".join(parts).split())[:500]
+    return (f"{code} {first}".strip() if code else ""), text
+
+
 def classify(code, msg):
-    """Returns (verdict, reason, outcome). outcome feeds the block-rate monitor."""
+    """Returns (verdict, reason, outcome). Reasons use the client's vocabulary. outcome feeds the
+    block-rate monitor."""
     low = msg.lower()
     if code in (250, 251):
-        return "valid", "", "ok"
-    if any(w in low for w in BLOCK_WORDS) or "5.7." in low:
-        return "unknown", "blocked", "blocked"
+        return "valid", "mailbox_exists", "ok"
+    stage = any(m in low for m in STAGE_MARKS)
+    if not stage and 500 <= code < 600 and any(p in low for p in INVALID_PHRASES):
+        return "invalid", "mailbox_not_found", "ok"
+    if stage or any(w in low for w in BLOCK_WORDS) or PTR_RE.search(low) or "5.7." in low:
+        return "unknown", "probe_blocked", "blocked"
     if 400 <= code < 500:
-        return "unknown", "temporary_or_greylisted", "temp"
+        return "unknown", "temporary_failure", "temp"
     if code == 552:
         return "unknown", "mailbox_full", "ok"
     if code in (550, 551, 553):
-        return "invalid", "mailbox_rejected", "ok"
-    return "unknown", f"smtp_{code}", "ok"
+        return "invalid", "mailbox_not_found", "ok"
+    return "unknown", "smtp_error", "ok"

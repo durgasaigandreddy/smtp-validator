@@ -48,7 +48,7 @@ def test_existing_and_missing_mailbox():
     s = serve(rcpt={"good@x.in": "250 2.1.5 OK"})
     assert check(s, "good@x.in")[0] == "valid"
     s = serve(rcpt={"good@x.in": "250 2.1.5 OK"})
-    assert check(s, "nobody@x.in")[:2] == ("invalid", "mailbox_rejected")
+    assert check(s, "nobody@x.in")[:2] == ("invalid", "mailbox_not_found")
 
 
 def test_sender_rejection_is_not_an_invalid_mailbox():
@@ -65,14 +65,14 @@ def test_greeting_rejection_counts_as_blocked():
 
 def test_greeting_busy_is_temporary():
     s = serve(banner="421 Too many connections, try later")
-    assert check(s, "good@x.in")[1:] == ("temporary_or_greylisted", "temp")
+    assert check(s, "good@x.in")[1:] == ("temporary_failure", "temp")
 
 
 def test_greylisting_is_temporary():
     s = serve(rcpt={"g@x.in": "451 4.7.1 Greylisted, try again later"})
-    assert check(s, "g@x.in")[1:] == ("temporary_or_greylisted", "temp")
+    assert check(s, "g@x.in")[1:] == ("temporary_failure", "temp")
 
 
 def test_policy_block_on_rcpt():
     s = serve(rcpt={"g@x.in": "550 5.7.1 Client host blocked using Spamhaus"})
-    assert check(s, "g@x.in")[1:] == ("blocked", "blocked")
+    assert check(s, "g@x.in")[1:] == ("probe_blocked", "blocked")

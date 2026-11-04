@@ -38,7 +38,7 @@ HTTPS with Caddy, daily backups, CSV results.
 | `scripts/` | `deploy.sh`, `setup_server.sh`, `gen_workers.py`, `preflight.py`, `backup.sh`, `make_cert.sh`, `export_caddy_root.sh`; `windows/*.ps1` for development |
 | `examples/` | `webhook_receiver.py` |
 | `postman/` | Postman collection |
-| `docs/` | `RUNBOOK.md`, `AUTH_AND_KEYS.md`, `WEBHOOKS.md`, `Handover-Guide.docx` |
+| `docs/` | `RUNBOOK.md`, `AUTH_AND_KEYS.md`, `WEBHOOKS.md`, `RESULTS_FORMAT.md`, `Handover-Guide.docx` |
 | `tests/` | unit tests |
 
 ## Quick start: production (Linux server, Docker)
@@ -71,7 +71,24 @@ docker compose -f docker-compose.dev.yml up -d           # Postgres on localhost
 .\scripts\windows\job-status.ps1 -Key ev_client... -JobId 1
 ```
 Most home and office networks block outbound port 25: check with
-`Test-NetConnection gmail-smtp-in.l.google.com -Port 25`. If it fails, checks end as `unknown` (`connect_error`/`timeout`).
+`Test-NetConnection gmail-smtp-in.l.google.com -Port 25`. If it fails, checks end as `unknown` (`connection_failed`/`timeout`).
+
+## Sending IPs: how they get into `ip_state`
+
+The application never picks the machine's own address. An IP exists in `ip_state` only after a **worker for that IP starts**:
+the worker is given `SOURCE_IP`, checks that the address really belongs to this machine, binds every check to it, and registers
+itself (`INSERT ... ip_state`). One worker per IP, so several IPs means several workers.
+
+| Where | How to list several IPs |
+|---|---|
+| Production | One IP per line in `config/ips.txt`, then `./scripts/deploy.sh` (it creates one worker container per line) |
+| Windows development | `.\scripts\windows\run-workers.ps1` (one window per line of `config\ips.txt`), or `run-worker.ps1 -Ip <ip>` per IP |
+| See them | `GET /admin/status`, the admin dashboard, or `SELECT ip, status, last_seen FROM ip_state ORDER BY ip;` |
+| Remove one | stop its worker, delete the line from `config/ips.txt`, then `DELETE FROM ip_state WHERE ip = '<ip>';` |
+
+The IPs must be real addresses on the server's network adapter (secondary addresses are fine). Check them with `ip -4 addr`
+(Linux) or `Get-NetIPAddress -AddressFamily IPv4` (Windows). Behind NAT, the outside world sees the router's public address
+instead of the one you bind, so reputation and reverse DNS apply to that public address.
 
 ## HTTPS with Caddy (`TLS_MODE` in `.env`)
 
@@ -94,8 +111,8 @@ Caddy removes `X-Api-Key` and `X-Setup-Token` from its access log and refuses `/
 | `POST /v1/jobs` | key | submit `{"emails":[...],"name":"...","webhook_url":"..."}` |
 | `POST /v1/jobs/upload` | key | submit a CSV file (`email` column); optional form field `webhook_url` |
 | `GET /v1/jobs/{id}` | key | progress, verdict counts, counts by provider, webhook state |
-| `GET /v1/jobs/{id}/results.csv` | key | results |
-| `GET /v1/result?email=` | key | stored result for one address |
+| `GET /v1/jobs/{id}/results.csv` | key | results CSV in the client's 13-column format; `?format=extended` adds `provider`, `?format=simple` gives 5 columns (see `docs/RESULTS_FORMAT.md`) |
+| `GET /v1/result?email=` | key | stored result for one address, same fields as the CSV |
 | `GET /admin/status` | admin | queue, IPs, limits, block rates |
 | `GET /admin/dashboard` | admin key typed into the page | live status page |
 | `POST /admin/ips/{ip}/pause` and `/resume` | admin | stop or resume an IP |
@@ -143,7 +160,7 @@ Covers SMTP classification against a fake mail server, warm-up, webhook signing 
 | 401 on every call | Missing or wrong `X-API-Key`; keys are shown only once |
 | 403 on `/admin/...` through HTTPS | Caller is outside the private network; use the LAN or VPN |
 | `Another worker is already running for <ip>` | Two workers for one IP; stop the extra one |
-| Every result `unknown` with `connect_error`/`timeout` | Outbound port 25 blocked by the network or ISP |
+| Every result `unknown` with `connection_failed`/`timeout` | Outbound port 25 blocked by the network or ISP |
 | Many `blocked` | IP is blacklisted or too fast; see the dashboard and `docs/RUNBOOK.md` |
 | Webhook 400 or never arrives | see the table in `docs/WEBHOOKS.md` |
 
