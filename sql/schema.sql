@@ -56,6 +56,19 @@ CREATE TABLE IF NOT EXISTS alerts_sent(key TEXT PRIMARY KEY, at TIMESTAMPTZ NOT 
 -- Last 4 characters of a key, so screens can show "key ending a91f". The key itself is never stored.
 ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS key_hint TEXT;
 
+-- Details kept for the results CSV (client format): the address as typed, the mail server used,
+-- the SMTP code with enhanced status ("250 2.1.5"), the server's reply text, and the catch-all result.
+ALTER TABLE job_items ADD COLUMN IF NOT EXISTS email_input TEXT;
+ALTER TABLE job_items ADD COLUMN IF NOT EXISTS mx_host TEXT;
+ALTER TABLE job_items ADD COLUMN IF NOT EXISTS smtp_status TEXT;
+ALTER TABLE job_items ADD COLUMN IF NOT EXISTS smtp_message TEXT;
+ALTER TABLE job_items ADD COLUMN IF NOT EXISTS catch_all BOOLEAN;
+ALTER TABLE job_items ADD COLUMN IF NOT EXISTS checked_at TIMESTAMPTZ;
+ALTER TABLE results ADD COLUMN IF NOT EXISTS mx_host TEXT;
+ALTER TABLE results ADD COLUMN IF NOT EXISTS smtp_status TEXT;
+ALTER TABLE results ADD COLUMN IF NOT EXISTS smtp_message TEXT;
+ALTER TABLE results ADD COLUMN IF NOT EXISTS catch_all BOOLEAN;
+
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS webhook_url TEXT;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS webhook_sent_at TIMESTAMPTZ;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS webhook_attempts INT NOT NULL DEFAULT 0;

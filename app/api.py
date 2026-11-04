@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
-from . import config, warmup, webhook
+from . import config, export, warmup, webhook
 from .auth import audit, create_key, generate_raw_key, hash_key, require_admin, require_key
 from .db import init_db, pool, q
 from .smtpcheck import EMAIL_SQL_RE
@@ -39,30 +39,40 @@ def check_webhook(url):
 
 
 def enqueue(key_id, name, emails, webhook_url=None):
-    emails = list(dict.fromkeys(e.strip().lower() for e in emails if e and e.strip()))
-    if not emails:
+    seen = {}
+    for e in emails:
+        e = (e or "").strip()
+        if e:
+            seen.setdefault(e.lower(), e)   # one entry per address; the first spelling is kept for the CSV
+    if not seen:
         raise HTTPException(400, "No email addresses supplied")
-    if len(emails) > config.MAX_BATCH:
+    if len(seen) > config.MAX_BATCH:
         raise HTTPException(413, f"Maximum {config.MAX_BATCH} addresses per job")
-    rows = [(e, e.rsplit("@", 1)[-1] if "@" in e else "") for e in emails]
+    rows = [(low, low.rsplit("@", 1)[-1] if "@" in low else "", orig) for low, orig in seen.items()]
     with pool().connection() as conn, conn.transaction():
         job_id = conn.execute("INSERT INTO jobs(key_id, name, total, webhook_url) VALUES (%s, %s, %s, %s) RETURNING id",
-                              (key_id, name, len(emails), webhook_url)).fetchone()["id"]
+                              (key_id, name, len(rows), webhook_url)).fetchone()["id"]
         with conn.cursor() as cur:
-            cur.executemany("INSERT INTO job_items(job_id, email, domain) VALUES (%s, %s, %s)",
-                            [(job_id, e, d) for e, d in rows])
-        # bad syntax: finish immediately
-        conn.execute("""UPDATE job_items SET status = 'done', verdict = 'invalid', reason = 'bad_syntax',
-                        provider = 'other', finished_at = now()
-                        WHERE job_id = %s AND email !~ %s""", (job_id, EMAIL_SQL_RE))
-        # fresh stored results: reuse without probing (lazy refresh)
+            cur.executemany("INSERT INTO job_items(job_id, email, domain, email_input) VALUES (%s, %s, %s, %s)",
+                            [(job_id, low, d, orig) for low, d, orig in rows])
+        # Addresses that cannot be valid are finished at once, without any mail server contact
+        conn.execute("""UPDATE job_items SET status = 'done', verdict = 'invalid', reason = 'syntax_too_long',
+                        provider = 'other', checked_at = now(), finished_at = now()
+                        WHERE job_id = %s AND (length(email) > 254 OR length(split_part(email, '@', 1)) > 64)""",
+                     (job_id,))
+        conn.execute("""UPDATE job_items SET status = 'done', verdict = 'invalid', reason = 'syntax_invalid',
+                        provider = 'other', checked_at = now(), finished_at = now()
+                        WHERE job_id = %s AND status = 'queued' AND email !~ %s""", (job_id, EMAIL_SQL_RE))
+        # Fresh stored results are reused without probing (lazy refresh), with their original details
         conn.execute("""UPDATE job_items ji SET status = 'done', verdict = r.verdict, reason = r.reason,
-                        provider = r.provider, finished_at = now()
+                        provider = r.provider, mx_host = r.mx_host, smtp_status = r.smtp_status,
+                        smtp_message = r.smtp_message, catch_all = r.catch_all,
+                        checked_at = r.checked_at, finished_at = now()
                         FROM results r
                         WHERE ji.job_id = %s AND ji.status = 'queued' AND ji.email = r.email
                           AND r.checked_at > now() - make_interval(days => %s::int)""",
                      (job_id, config.REFRESH_DAYS))
-    return job_id, len(emails)
+    return job_id, len(rows)
 
 
 def own_job(job_id, key):
@@ -70,11 +80,6 @@ def own_job(job_id, key):
     if not job or (job["key_id"] != key["id"] and not key["is_admin"]):
         raise HTTPException(404, "Job not found")
     return job
-
-
-def safe(v):
-    v = "" if v is None else str(v)
-    return "'" + v if v[:1] in ("=", "+", "-", "@") else v
 
 
 @app.get("/healthz")
@@ -156,29 +161,29 @@ def get_job(job_id: int, request: Request, key=Depends(require_key)):
 
 
 @app.get("/v1/jobs/{job_id}/results.csv")
-def job_csv(job_id: int, request: Request, key=Depends(require_key)):
+def job_csv(job_id: int, request: Request, fmt: str = Query("full", alias="format"),
+            key=Depends(require_key)):
+    """Results as CSV. format=full (default, the client's 13 columns), extended (adds provider) or simple."""
     own_job(job_id, key)
-    rows = q("""SELECT email, verdict, reason, provider, finished_at FROM job_items
-                WHERE job_id = %s ORDER BY id""", (job_id,))
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["email", "verdict", "reason", "provider", "checked_at"])
-    for r in rows:
-        w.writerow([safe(r["email"]), r["verdict"] or "pending", r["reason"] or "",
-                    r["provider"] or "", r["finished_at"].isoformat() if r["finished_at"] else ""])
-    audit(key["id"], "job_download", f"job={job_id}", request)
-    return Response(buf.getvalue(), media_type="text/csv",
+    if fmt not in export.FORMATS:
+        raise HTTPException(400, f"format must be one of: {', '.join(export.FORMATS)}")
+    rows = q("""SELECT email_input, email, domain, status, verdict, reason, provider, mx_host, smtp_status,
+                       smtp_message, catch_all, checked_at, finished_at
+                FROM job_items WHERE job_id = %s ORDER BY id""", (job_id,))
+    audit(key["id"], "job_download", f"job={job_id} format={fmt}", request)
+    return Response(export.render_csv(rows, fmt), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="job-{job_id}.csv"'})
 
 
 @app.get("/v1/result")
 def stored_result(email: str, request: Request, key=Depends(require_key)):
-    row = q("""SELECT email, verdict, reason, provider, checked_at FROM results
-               WHERE email = %s""", (email.strip().lower(),), one=True)
+    """The stored result for one address, with the same fields as the CSV."""
+    row = q("""SELECT email, domain, verdict, reason, provider, mx_host, smtp_status, smtp_message,
+                      catch_all, checked_at FROM results WHERE email = %s""", (email.strip().lower(),), one=True)
     audit(key["id"], "result_lookup", "", request)
     if not row:
         raise HTTPException(404, "No stored result; submit it as a job")
-    return row
+    return export.record(row)
 
 
 # ------------------------------ first admin key ------------------------------

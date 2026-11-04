@@ -56,7 +56,7 @@ curl -H "X-API-Key: $KEY" -o out.csv https://HOST/v1/jobs/1/results.csv
 curl -H "X-API-Key: $KEY" -F file=@list.csv https://HOST/v1/jobs/upload
 ```
 With `TLS_MODE=internal` add `--cacert deploy/caddy-root.crt`. Verdicts: `valid`, `invalid`, `catch_all`, `unknown`
-(the reason says why: blocked, timeout, temporary_or_greylisted, mailbox_full ...). Interactive docs: `/docs`.
+(the reason says why: probe_blocked, timeout, temporary_failure, mailbox_full ...; full list in `RESULTS_FORMAT.md`). Interactive docs: `/docs`.
 A Postman collection is in `postman/`.
 
 ## 5. IP warm-up (first 2 months)

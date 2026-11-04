@@ -1,0 +1,2 @@
+# Optional: extra disposable (throw-away) email domains, one per line. Blank lines and # comments are ignored.
+# The built-in list is short; paste an open-source list of disposable domains here to extend it.

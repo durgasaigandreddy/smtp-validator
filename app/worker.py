@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import signal
+import socket
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -14,7 +15,7 @@ from .db import init_db, q
 log = logging.getLogger("worker")
 IP = os.environ.get("SOURCE_IP", "")
 DEFINITIVE = ("valid", "invalid", "catch_all")
-RETRIABLE = ("temporary_or_greylisted", "timeout", "connect_error", "dns_error", "blocked")
+RETRIABLE = ("temporary_failure", "timeout", "connection_failed", "dns_error", "probe_blocked")
 running = True
 _last_beat = 0.0
 _lock_conn = None  # held open for the life of the process
@@ -70,16 +71,27 @@ def claim():
                 RETURNING *""", one=True)
 
 
-def finish(item, verdict, reason, provider, code, store=True):
+INFO_KEYS = ("mx_host", "smtp_status", "smtp_message", "catch_all", "checked_at")
+
+
+def finish(item, verdict, reason, provider, code, store=True, info=None):
+    """Mark an item done. info carries the details shown in the results CSV."""
+    info = info or {}
     q("""UPDATE job_items SET status = 'done', verdict = %s, reason = %s, provider = %s,
-         finished_at = now() WHERE id = %s""", (verdict, reason, provider, item["id"]))
+         mx_host = %s, smtp_status = %s, smtp_message = %s, catch_all = %s,
+         checked_at = coalesce(%s, now()), finished_at = now() WHERE id = %s""",
+      (verdict, reason, provider, info.get("mx_host"), info.get("smtp_status"), info.get("smtp_message"),
+       info.get("catch_all"), info.get("checked_at"), item["id"]))
     if store and verdict in DEFINITIVE:
-        q("""INSERT INTO results(email, domain, verdict, reason, provider, smtp_code, checked_at, checked_by_ip)
-             VALUES (%s, %s, %s, %s, %s, %s, now(), %s)
+        q("""INSERT INTO results(email, domain, verdict, reason, provider, smtp_code, mx_host, smtp_status,
+                                 smtp_message, catch_all, checked_at, checked_by_ip)
+             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s)
              ON CONFLICT (email) DO UPDATE SET verdict = EXCLUDED.verdict, reason = EXCLUDED.reason,
-               provider = EXCLUDED.provider, smtp_code = EXCLUDED.smtp_code,
-               checked_at = now(), checked_by_ip = EXCLUDED.checked_by_ip""",
-          (item["email"], item["domain"], verdict, reason, provider, code, IP))
+               provider = EXCLUDED.provider, smtp_code = EXCLUDED.smtp_code, mx_host = EXCLUDED.mx_host,
+               smtp_status = EXCLUDED.smtp_status, smtp_message = EXCLUDED.smtp_message,
+               catch_all = EXCLUDED.catch_all, checked_at = now(), checked_by_ip = EXCLUDED.checked_by_ip""",
+          (item["email"], item["domain"], verdict, reason, provider, code, info.get("mx_host"),
+           info.get("smtp_status"), info.get("smtp_message"), info.get("catch_all"), IP))
 
 
 def requeue(item, minutes, count_attempt=True):
@@ -89,11 +101,11 @@ def requeue(item, minutes, count_attempt=True):
       (minutes, 0 if count_attempt else 1, item["id"]))
 
 
-def retry_or_finish(item, reason, provider):
+def retry_or_finish(item, reason, provider, info=None):
     if reason in RETRIABLE and item["attempts"] < config.MAX_ATTEMPTS:
         requeue(item, config.RETRY_DELAY_MIN * item["attempts"])
     else:
-        finish(item, "unknown", reason, provider, None, store=False)
+        finish(item, "unknown", reason, provider, None, store=False, info=info)
 
 
 def get_domain(domain):
@@ -119,32 +131,35 @@ def catch_all_fresh(dom):
 
 
 def detect_catch_all(domain, mx):
+    """True / False when the answer is clear, None when it could not be decided (not cached)."""
     fake = f"zz-{random.getrandbits(48):012x}@{domain}"
     bump(domain)
     try:
         code, msg = smtpcheck.rcpt_probe(fake, mx, IP)
     except smtpcheck.ProbeError:
-        return False
-    log_probe(domain, smtpcheck.classify(code, msg)[2])
-    if code in (250, 251):
-        result = True
-    elif 500 <= code < 600:
-        result = False
+        return None
+    verdict, _reason, outcome = smtpcheck.classify(code, msg)
+    log_probe(domain, outcome)
+    if verdict == "valid":
+        result = True               # a made-up address was accepted: the domain accepts everything
+    elif verdict == "invalid":
+        result = False              # a made-up address was refused: it checks mailboxes
     else:
-        return False  # inconclusive: do not cache
-    q("UPDATE domains SET catch_all = %s, catch_all_checked_at = now() WHERE domain = %s",
-      (result, domain))
+        return None                 # blocked, temporary or unclear: says nothing about the domain
+    q("UPDATE domains SET catch_all = %s, catch_all_checked_at = now() WHERE domain = %s", (result, domain))
     return result
 
 
 def handle(item):
     """Process one item. Returns True if at least one SMTP probe was made."""
     email, domain = item["email"], item["domain"]
-    cached = q("""SELECT verdict, reason, provider FROM results WHERE email = %s
+    cached = q("""SELECT verdict, reason, provider, mx_host, smtp_status, smtp_message, catch_all, checked_at
+                  FROM results WHERE email = %s
                   AND checked_at > now() - make_interval(days => %s::int)""",
                (email, config.REFRESH_DAYS), one=True)
     if cached:
-        finish(item, cached["verdict"], cached["reason"], cached["provider"], None, store=False)
+        finish(item, cached["verdict"], cached["reason"], cached["provider"], None, store=False,
+               info={k: cached[k] for k in INFO_KEYS})
         return False
 
     if used_domain(domain) >= config.PER_DOMAIN_IP_DAILY:
@@ -157,38 +172,43 @@ def handle(item):
         retry_or_finish(item, "dns_error", provider)
         return False
     if not dom["mx"]:
-        finish(item, "invalid", "no_mx", provider, None)
+        finish(item, "invalid", "no_mail_server", provider, None)
         return False
     if catch_all_fresh(dom) and dom["catch_all"]:
-        finish(item, "catch_all", "domain_accepts_everything", provider, None)
+        finish(item, "catch_all", "catch_all", provider, None, info={
+            "mx_host": dom["mx"][0], "smtp_status": "250", "catch_all": True,
+            "smtp_message": "Domain accepts mail for any address (known from an earlier check)"})
         return False
 
-    result, used_mx = None, None
+    result, info, used_mx = None, None, None
     for mx in dom["mx"][:2]:
         bump(domain)
         try:
             code, msg = smtpcheck.rcpt_probe(email, mx, IP)
         except smtpcheck.ProbeError as e:
             log_probe(domain, e.kind)
-            result = ("unknown", "timeout" if e.kind == "timeout" else "connect_error", None)
+            timed_out = e.kind == "timeout"
+            result = ("unknown", "timeout" if timed_out else "connection_failed", None)
+            info = {"mx_host": mx, "smtp_status": "", "smtp_message":
+                    "Connection timed out" if timed_out else "Could not connect to the mail server"}
             continue
         verdict, reason, outcome = smtpcheck.classify(code, msg)
         log_probe(domain, outcome)
+        status, text = smtpcheck.parse_reply(code, msg)
         result, used_mx = (verdict, reason, code), mx
+        info = {"mx_host": mx, "smtp_status": status, "smtp_message": text}
         break
 
     verdict, reason, code = result
     if verdict == "valid":
-        if not catch_all_fresh(dom):
-            is_ca = detect_catch_all(domain, used_mx)
-        else:
-            is_ca = bool(dom["catch_all"])
+        is_ca = bool(dom["catch_all"]) if catch_all_fresh(dom) else detect_catch_all(domain, used_mx)
+        info["catch_all"] = is_ca          # True, False, or None when it could not be decided
         if is_ca:
-            verdict, reason = "catch_all", "domain_accepts_everything"
+            verdict, reason = "catch_all", "catch_all"
     if verdict == "unknown":
-        retry_or_finish(item, reason, provider)
+        retry_or_finish(item, reason, provider, info)
     else:
-        finish(item, verdict, reason, provider, code)
+        finish(item, verdict, reason, provider, code, info=info)
     return True
 
 
@@ -196,7 +216,12 @@ def main():
     global _lock_conn
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if not IP:
-        raise SystemExit("SOURCE_IP is required")
+        raise SystemExit("SOURCE_IP is required (the worker never guesses the machine's own address)")
+    try:
+        with socket.socket() as probe:
+            probe.bind((IP, 0))
+    except OSError as e:
+        raise SystemExit(f"{IP} is not an address of this machine ({e}). Add it to the network adapter first.")
     init_db()
     # Only one worker may run per IP. The lock lives as long as this connection; if the
     # process dies the database releases it, so nothing can get stuck.

@@ -555,7 +555,38 @@
                 "results.csv"
               ]
             },
-            "description": ""
+            "description": "Default: the client's 13-column format. Add ?format=extended (adds provider) or ?format=simple."
+          }
+        },
+        {
+          "name": "Download results CSV (extended)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/jobs/{{jobId}}/results.csv?format=extended",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "jobs",
+                "{{jobId}}",
+                "results.csv"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "extended"
+                }
+              ]
+            },
+            "description": "Default: the client's 13-column format. Add ?format=extended (adds provider) or ?format=simple."
           }
         },
         {

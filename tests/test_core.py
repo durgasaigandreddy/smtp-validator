@@ -17,9 +17,9 @@ def test_warmup_monotonic():
 
 def test_classify():
     assert smtpcheck.classify(250, "2.1.5 OK")[0] == "valid"
-    assert smtpcheck.classify(550, "5.1.1 user unknown")[:2] == ("invalid", "mailbox_rejected")
-    assert smtpcheck.classify(550, "5.7.1 blocked using Spamhaus")[1:] == ("blocked", "blocked")
-    assert smtpcheck.classify(451, "try later")[1:] == ("temporary_or_greylisted", "temp")
+    assert smtpcheck.classify(550, "5.1.1 user unknown")[:2] == ("invalid", "mailbox_not_found")
+    assert smtpcheck.classify(550, "5.7.1 blocked using Spamhaus")[1:] == ("probe_blocked", "blocked")
+    assert smtpcheck.classify(451, "try later")[1:] == ("temporary_failure", "temp")
     assert smtpcheck.classify(552, "mailbox full")[1] == "mailbox_full"
 
 
